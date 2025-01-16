@@ -92,6 +92,7 @@ def gen_file(template, output: str, db: Database | None):
     except PermissionError as e:
         raise click.ClickException(f"无法保存文件: {output}, 请检查文件是否被占用或者被其他程序打开") from e
 
+
 @cli.command(name='doc')
 @click.pass_context
 @option("--jdbc", "-j", help="jdbc url for host port database")
@@ -102,18 +103,19 @@ def gen_file(template, output: str, db: Database | None):
 @option("--user", "-u", help="database user")
 @option("--password", "-pwd", help="database password")
 @option("--database", "-d", help="database name")
-@option("--open",  help="open file after generate", is_flag=True, default=True)
-@option("--template",  help="ms word template file", default="default.docx")
+@option("--open", help="open file after generate", is_flag=True, default=True)
+@option("--template", help="ms word template file", default="default.docx")
 def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, database, open, template):
     """
     生成数据库文档
     """
+    if is_file_in_use(output):
+        raise click.ClickException(f"文件: {output} 已被占用, 请关闭文件后再试")
 
     if not host and not port and not jdbc and not database:
         use_jdbc = survey.routines.inquire("使用jdbc链接提供数据库信息? ", default=True)
         if use_jdbc:
             jdbc = survey.routines.input("请输入jdbc url: ")
-
 
     if jdbc:
         # jdbc:mysql://localhost:3306/test
@@ -123,12 +125,8 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, database, open
         else:
             raise click.ClickException("jdbc url 格式不正确")
 
-
-
-
-
     if not host:
-        host =  survey.routines.input("请输入数据库主机地址: ")
+        host = survey.routines.input("请输入数据库主机地址: ")
         # 如果用户输入的是 host:port
         if ':' in host:
             host, port = host.split(':')
@@ -144,8 +142,6 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, database, open
 
     if not database:
         database = survey.routines.input("请输入数据库名称: ")
-
-
 
     click.echo(f'开始生成数据库文档: {dbtype} {host}:{port}/{database} -> {output}')
 
@@ -190,7 +186,6 @@ def get_all_columns(cursor, table):
                default=column['Default'] if column['Default'] is not None else '',
                comment=column['Comment'] if column['Comment'] is not None else '', ) for column in columns]
 
-
     # get primary key
     cursor.execute(f"show index from {table}")
     indexs = cursor.fetchall()
@@ -202,6 +197,17 @@ def get_all_columns(cursor, table):
                 break
 
     return columns_
+
+
+def is_file_in_use(filename):
+    if not os.path.exists(filename):
+        return False
+
+    try:
+        with open(filename, 'w') as file:
+            return False  # 文件未被占用
+    except IOError:
+        return True  # 文件被占用
 
 
 if __name__ == '__main__':
