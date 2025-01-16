@@ -9,7 +9,12 @@
 
 ## db-tool.py
 
-数据库文档生成工具，支持 MySQL、PostgreSQL(todo), KingBase(todo) 数据库。
+数据库文档生成工具。
+- ✅ MySQL
+- ✅ Doris
+- ✅ PostgreSQL
+- ❌ KingBase 
+- ❌ 达梦
 
 
 ![](./image/db-tool-demo.gif)

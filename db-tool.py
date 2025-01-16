@@ -191,7 +191,7 @@ def read_postgresql_db(host, port, user, password, database, schema):
 @click.pass_context
 @option("--jdbc", "-j", help="jdbc url for host port database")
 @option('--output', '-o', help='output file', default='db-doc.docx', show_default=True)
-@option("--dbtype", "-t", type=click.Choice(['mysql', 'postgresql']), help="database type", default="mysql")
+@option("--dbtype", "-t", type=click.Choice(['mysql', 'postgresql', 'doris']), help="database type", default="mysql")
 @option("--host", "-h", help="database host")
 @option("--port", "-p", help="database port")
 @option("--user", "-u", help="database user")
@@ -240,7 +240,7 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
 
     click.echo(f'开始生成数据库文档: {dbtype} {host}:{port}/{database} -> {output}')
 
-    if dbtype == 'mysql':
+    if dbtype == 'mysql' or dbtype == 'doris':
         db = read_mysql_db(host, port, user, password, database)
 
     elif dbtype == 'postgresql':
