@@ -2,12 +2,12 @@ import glob
 import re
 from dataclasses import dataclass
 from email.policy import default
-
+import psycopg2
 import click
 import survey
 from click import argument, option
 from lxml import etree
-
+from psycopg2.extras import RealDictCursor
 import os
 import pymysql.cursors
 from docxtpl import DocxTemplate
@@ -73,7 +73,7 @@ def read_mysql_db(host, port, user, password, database):
             table_list = []
             # get table comment
 
-            ts = cursor.execute("show table status")
+            cursor.execute("show table status")
             table_status = cursor.fetchall()
             table_comment = {table['Name']: table['Comment'] for table in table_status}
 
@@ -93,19 +93,114 @@ def gen_file(template, output: str, db: Database | None):
         raise click.ClickException(f"无法保存文件: {output}, 请检查文件是否被占用或者被其他程序打开") from e
 
 
+def get_all_tables_pg(cursor, schema):
+    cursor.execute(f"""
+    SELECT 
+    c.relname AS table_name, 
+    obj_description(c.oid) AS table_comment
+FROM 
+    pg_class c
+JOIN 
+    pg_namespace n ON c.relnamespace = n.oid
+WHERE 
+    n.nspname = '{schema}' AND 
+    c.relkind = 'r'
+ORDER BY 
+    c.relname;
+    """)
+    tables = cursor.fetchall()
+    return tables
+
+
+def get_all_columns_pg(cursor, param, schema):
+    # 执行SQL查询语句
+    cursor.execute(f"""
+        SELECT 
+            c.table_name,
+            c.column_name,
+            c.data_type,
+            CASE 
+                WHEN c.data_type = 'character varying' OR c.data_type = 'varchar' THEN c.character_maximum_length
+                WHEN c.data_type = 'numeric' THEN c.numeric_precision
+                ELSE NULL
+            END AS length,
+            CASE 
+                WHEN c.data_type = 'numeric' THEN c.numeric_scale
+                ELSE NULL
+            END AS decimal,
+            c.is_nullable = 'YES' AS nullable,
+            c.column_default,
+            d.description AS comment,
+            c.column_name IN (
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+                WHERE i.indrelid = c.table_name::regclass AND i.indisprimary
+            ) AS primary_key
+        FROM 
+            information_schema.columns c
+        JOIN 
+            pg_description d ON d.objoid = c.table_name::regclass AND d.objsubid = c.ordinal_position
+        WHERE 
+            c.table_schema = '{schema}'
+        ORDER BY 
+            c.table_name, 
+            c.ordinal_position;
+    """)
+
+    # 获取查询结果
+    columns = cursor.fetchall()
+
+    # 将结果转换为Column类的实例
+    column_objects = [
+        Column(
+            table=row['table_name'],
+            name=row['column_name'],
+            type=row['data_type'],
+            length=row['length'],
+            decimal=row['decimal'],
+            nullable=row['nullable'],
+            default=row['column_default'] or '',
+            comment=row['comment'],
+            primary_key=row['primary_key']
+        )
+        for row in columns
+    ]
+
+    return column_objects
+
+
+def read_postgresql_db(host, port, user, password, database, schema):
+    schema = schema or 'public'
+
+    with psycopg2.connect(database=database, user=user, password=password, host=host, port=port,
+                          cursor_factory=RealDictCursor) as connection:
+        with connection.cursor() as cursor:
+            tables = get_all_tables_pg(cursor, schema)
+
+            table_list = []
+            for table in tables:
+                all_columns_pg = get_all_columns_pg(cursor, table['table_name'], schema)
+                table_list.append(
+                    Table(name=table['table_name'], columns=all_columns_pg, comment=table['table_comment']))
+
+            return Database(name=database, tables=table_list)
+
+
 @cli.command(name='doc')
 @click.pass_context
 @option("--jdbc", "-j", help="jdbc url for host port database")
 @option('--output', '-o', help='output file', default='db-doc.docx', show_default=True)
-@option("--dbtype", "-t", type=click.Choice(['mysql']), help="database type", default="mysql")
+@option("--dbtype", "-t", type=click.Choice(['mysql', 'postgresql']), help="database type", default="mysql")
 @option("--host", "-h", help="database host")
 @option("--port", "-p", help="database port")
 @option("--user", "-u", help="database user")
 @option("--password", "-pwd", help="database password")
+@option("--schema", "-s", help="database schema")
 @option("--database", "-d", help="database name")
 @option("--open", help="open file after generate", is_flag=True, default=True)
 @option("--template", help="ms word template file", default="default.docx")
-def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, database, open, template):
+def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, database, open, template):
     """
     生成数据库文档
     """
@@ -147,6 +242,9 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, database, open
 
     if dbtype == 'mysql':
         db = read_mysql_db(host, port, user, password, database)
+
+    elif dbtype == 'postgresql':
+        db = read_postgresql_db(host, port, user, password, database, schema)
     else:
         click.echo(f"不支持的数据库类型: {dbtype}")
         return
