@@ -1,3 +1,12 @@
+## 更新requirements.txt
+
+```shell
+
+pip freeze > requirements.txt
+
+```
+
+
 ## postgresql 开发环境
 
 
