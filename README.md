@@ -48,3 +48,21 @@ python db-tool.py -h
 
 python db-tool.py doc -h 10.111.128.219 -p 8889 -u tech_ext -pwd password!!! -d tech_ext
 ```
+
+
+### 进阶用法
+可以通过指定模板文件，生成自定义的数据库文档。
+模板可以参考 default.docx 文件，使用 jinja2 语法。 模板工具使用的是 python-docx-template 库。
+
+渲染上下文对象 db, 可以参考 db-tool.py 中 Database 类的定义。
+
+
+
+参考文档：
+- https://docxtpl.readthedocs.io/en/latest/
+- https://jinja.palletsprojects.com/en/2.11.x/templates/
+
+
+
+
+
