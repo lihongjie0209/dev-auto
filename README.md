@@ -13,9 +13,11 @@
 - ✅ MySQL
 - ✅ Doris
 - ✅ PostgreSQL
-- ❌ KingBase 
+- ❓ TiDB (理论上和MySQL一样, 待测试) 
+- ✅ KingBase 
 - ❌ 达梦
-
+- ❌ Oracle
+- ❌ SQLServer
 
 ![](./image/db-tool-demo.gif)
 
