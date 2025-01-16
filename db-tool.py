@@ -2,6 +2,8 @@ import glob
 import re
 from dataclasses import dataclass
 from email.policy import default
+from typing import List
+
 import psycopg2
 import click
 import survey
@@ -60,7 +62,21 @@ def cli(ctx):
     pass
 
 
-def read_mysql_db(host, port, user, password, database):
+def exclude_table(table, include, exclude):
+
+    if include:
+        for i in include:
+            if re.match(i, table):
+                return False
+    if exclude:
+        for e in exclude:
+            if re.match(e, table):
+                return True
+
+    return False
+
+
+def read_mysql_db(host, port, user, password, database, schema, include, exclude):
     with pymysql.connect(host=host,
                          port=int(port),
                          user=user,
@@ -78,6 +94,8 @@ def read_mysql_db(host, port, user, password, database):
             table_comment = {table['Name']: table['Comment'] for table in table_status}
 
             for table in tables:
+                if exclude_table(table, include, exclude):
+                    continue
                 columns = get_all_columns(cursor, table)
                 table_list.append(Table(name=table, columns=columns, comment=table_comment.get(table, '')))
             return Database(name=database, tables=table_list)
@@ -367,7 +385,7 @@ def get_all_columns_pg(cursor, table, schema):
     return column_objects
 
 
-def read_postgresql_db(host, port, user, password, database, schema):
+def read_postgresql_db(host, port, user, password, database, schema, include, exclude):
     schema = schema or 'public'
 
     with psycopg2.connect(database=database, user=user, password=password, host=host, port=port,
@@ -377,6 +395,10 @@ def read_postgresql_db(host, port, user, password, database, schema):
 
             table_list = []
             for table in tables:
+
+                if exclude_table(table['table_name'], include, exclude):
+                    continue
+
                 all_columns_pg = get_all_columns_pg(cursor, table['table_name'], schema)
                 table_list.append(
                     Table(name=table['table_name'], columns=all_columns_pg, comment=table['table_comment']))
@@ -384,7 +406,7 @@ def read_postgresql_db(host, port, user, password, database, schema):
             return Database(name=database, tables=table_list)
 
 
-def read_kingbase_db(host, port, user, password, database, schema):
+def read_kingbase_db(host, port, user, password, database, schema, include, exclude):
     schema = schema or 'public'
 
     with psycopg2.connect(database=database, user=user, password=password, host=host, port=port,
@@ -394,6 +416,8 @@ def read_kingbase_db(host, port, user, password, database, schema):
 
             table_list = []
             for table in tables:
+                if exclude_table(table['table_name'], include, exclude):
+                    continue
                 all_columns = get_all_columns_kb(cursor, table['table_name'], schema)
                 table_list.append(
                     Table(name=table['table_name'], columns=all_columns, comment=table['table_comment']))
@@ -421,7 +445,9 @@ def normalize_dbtype(dbtype):
 @option("--database", "-d", help="database name")
 @option("--open", help="open file after generate", is_flag=True, default=True)
 @option("--template", help="ms word template file", default="default.docx")
-def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, database, open, template):
+@option("--include", help="include tables support regex", multiple=True)
+@option("--exclude", help="exclude tables support regex", multiple=True)
+def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, database, open, template, include, exclude):
     """
     生成数据库文档
     """
@@ -463,12 +489,12 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
     click.echo(f'开始生成数据库文档: {dbtype} {host}:{port}/{database} -> {output}')
 
     if dbtype == 'mysql' or dbtype == 'doris':
-        db = read_mysql_db(host, port, user, password, database)
+        db = read_mysql_db(host, port, user, password, database, schema, include, exclude)
 
     elif dbtype == 'postgresql' :
-        db = read_postgresql_db(host, port, user, password, database, schema)
+        db = read_postgresql_db(host, port, user, password, database, schema, include, exclude)
     elif dbtype == 'kingbasees':
-        db = read_kingbase_db(host, port, user, password, database, schema)
+        db = read_kingbase_db(host, port, user, password, database, schema, include, exclude)
     else:
         click.echo(f"不支持的数据库类型: {dbtype}")
         return
