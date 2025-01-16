@@ -12,7 +12,7 @@ def all_branches(repo):
 
 
 @click.group()
-@argument('repo', default='.', type=click.Path(exists=True))
+@option('--repo', '-r', default='.', help='git repository path', type=click.Path(exists=True))
 @click.pass_context
 def cli(ctx, repo):
     try:
@@ -23,7 +23,7 @@ def cli(ctx, repo):
 
 @cli.command()
 @option('--source', '-s', help='source branch')
-@option('--push', '-p', is_flag=True, help='push branch', default=False)
+@option('--push', '-p', is_flag=True, help='push branch', default=True)
 @click.pass_context
 def feature(ctx, source, push):
     """
@@ -64,7 +64,7 @@ def feature(ctx, source, push):
 
 @cli.command()
 @option('--source', '-s', help='source branch')
-@option('--push', '-p', is_flag=True, help='push branch', default=False)
+@option('--push', '-p', is_flag=True, help='push branch', default=True)
 @click.pass_context
 def hotfix(ctx, source, push):
     """
@@ -109,7 +109,7 @@ def hotfix(ctx, source, push):
 @cli.command()
 @option('--source', '-s', help='source branch')
 @option('--target', '-t', help='target branch')
-@option('--push', '-p', is_flag=True, help='push branch', default=False)
+@option('--push', '-p', is_flag=True, help='push branch', default=True)
 @click.pass_context
 def rebase(ctx, source, target, push):
     """
@@ -188,7 +188,7 @@ def find_main(repo, branches):
 @cli.command()
 @option('--source', '-s', help='source branch')
 @option('--target', '-t', help='target branch')
-@option('--push', '-p', is_flag=True, help='push branch', default=False)
+@option('--push', '-p', is_flag=True, help='push branch', default=True)
 @click.pass_context
 def merge(ctx, source, target, push):
     """
@@ -244,6 +244,52 @@ def merge(ctx, source, target, push):
         click.echo(f"请手动push分支 {target_branch}")
 
     click.echo(f"分支合并成功 {source_branch} -> {target_branch}")
+
+
+
+@cli.command(name="sb")
+@option('--source', '-s', help='source branch')
+@option('--push', '-p', is_flag=True, help='push branch', default=True)
+@click.pass_context
+def create_standard_branches(ctx, source,  push):
+    """
+    创建标准分支 master dev prev prod
+    """
+    repo = ctx.obj
+
+    branches = all_branches(repo)
+
+    targets = ['master', 'dev', 'prev', 'prod']
+
+    # 排除已经存在的分支
+
+    targets = [t for t in targets if t not in branches]
+
+
+    if not targets:
+        click.echo("标准分支已经存在")
+        return
+    indexes  = survey.routines.basket("选择需要创建的分支: ", options=targets)
+
+    targets = [targets[i] for i in indexes]
+
+    if not source:
+        source = find_main(repo, branches)
+
+    if not source:
+        source = branches[survey.routines.select("请选择源分支: ", options=branches)]
+
+    for target in targets:
+        repo.git.checkout(source)
+        repo.git.pull()
+        repo.git.checkout('-b', target)
+        if push:
+            repo.git.push('-u', 'origin', target)
+        else:
+            click.echo(f"请手动push分支 {target}")
+        click.echo(f"新的分支{target}创建成功, 源分支为{source}")
+
+
 
 
 if __name__ == '__main__':
