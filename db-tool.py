@@ -443,6 +443,36 @@ def normalize_dbtype(dbtype):
     return dbtype
 
 
+def gen_er_diagram_text(db):
+    t = "erDiagram\n"
+
+    for table in db.tables:
+        t += f"    {table.name} {{\n"
+        for column in table.columns:
+            t += f"        {column.type.replace(' ', '_')} {column.name} {'PK' if column.primary_key else ''} \"{column.comment}\"\n"
+        t += "    }\n"
+
+    return t
+
+
+def gen_er_diagram(erdiagram, db):
+    
+    if erdiagram == 'None'  or erdiagram == 'none':
+        return
+
+    diagram_text = gen_er_diagram_text(db)
+
+
+    if erdiagram == 'console':
+        click.echo(diagram_text)
+    else:
+        with open(erdiagram, 'w') as f:
+            f.write(diagram_text)
+
+    click.echo(f"ER Diagram 生成成功, 登录 https://mermaid.live/edit 生成图形化ER图")
+
+
+
 @cli.command(name='doc')
 @click.pass_context
 @option("--jdbc", "-j", help="jdbc url for host port database")
@@ -458,7 +488,8 @@ def normalize_dbtype(dbtype):
 @option("--template", help="ms word template file", default="default.docx")
 @option("--include", help="include tables support regex", multiple=True)
 @option("--exclude", help="exclude tables support regex", multiple=True)
-def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, database, open, template, include, exclude):
+@option("--erdiagram", help="output erDiagram", default='none')
+def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, database, open, template, include, exclude, erdiagram):
     """
     生成数据库文档
     """
@@ -517,6 +548,8 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
     click.echo(f"文件生成成功: {output}")
     if open:
         os.startfile(output)
+    
+    gen_er_diagram(erdiagram, db)
 
 
 def ensure_file(output):
