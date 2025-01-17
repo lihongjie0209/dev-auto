@@ -462,7 +462,10 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
     """
     生成数据库文档
     """
+
     ensure_file(output)
+    output = os.path.abspath(output)
+
 
     if not host and not port and not jdbc and not database:
         use_jdbc = survey.routines.inquire("使用jdbc链接提供数据库信息? ", default=True)
@@ -511,6 +514,7 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
 
     gen_file(template, output, db)
 
+    click.echo(f"文件生成成功: {output}")
     if open:
         os.startfile(output)
 
