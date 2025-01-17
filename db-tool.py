@@ -1,18 +1,14 @@
-import glob
+import os
 import re
 from dataclasses import dataclass
-from email.policy import default
-from typing import List
 
-import psycopg2
 import click
-import survey
-from click import argument, option
-from lxml import etree
-from psycopg2.extras import RealDictCursor
-import os
+import psycopg2
 import pymysql.cursors
+import survey
+from click import option
 from docxtpl import DocxTemplate
+from psycopg2.extras import RealDictCursor
 
 
 @dataclass
@@ -292,7 +288,7 @@ WHERE NOT pg_is_other_temp_schema(nc.oid)
             ) AS primary_key
         FROM 
             my_columns c
-        JOIN 
+        LEFT JOIN 
             pg_description d ON d.objoid = c.table_name::regclass AND d.objsubid = c.ordinal_position
         WHERE 
             c.table_schema = '{schema}'
@@ -316,7 +312,7 @@ WHERE NOT pg_is_other_temp_schema(nc.oid)
             decimal=row['decimal'],
             nullable=row['nullable'],
             default=row['column_default'] or '',
-            comment=row['comment'],
+            comment=row['comment'] or '',
             primary_key=row['primary_key']
         )
         for row in columns
@@ -391,6 +387,9 @@ def read_postgresql_db(host, port, user, password, database, schema, include, ex
     with psycopg2.connect(database=database, user=user, password=password, host=host, port=port,
                           cursor_factory=RealDictCursor) as connection:
         with connection.cursor() as cursor:
+
+            update_schema(cursor, schema)
+
             tables = get_all_tables_pg(cursor, schema)
 
             table_list = []
@@ -412,6 +411,10 @@ def read_kingbase_db(host, port, user, password, database, schema, include, excl
     with psycopg2.connect(database=database, user=user, password=password, host=host, port=port,
                           cursor_factory=RealDictCursor) as connection:
         with connection.cursor() as cursor:
+
+
+            update_schema(cursor, schema)
+
             tables = get_all_tables_pg(cursor, schema)
 
             table_list = []
@@ -423,6 +426,14 @@ def read_kingbase_db(host, port, user, password, database, schema, include, excl
                     Table(name=table['table_name'], columns=all_columns, comment=table['table_comment']))
 
             return Database(name=database, tables=table_list)
+
+
+def update_schema(cursor, schema):
+    cursor.execute("SELECT current_schema()")
+    click.echo("current_schema is : " + cursor.fetchone()['current_schema'])
+    set_cmd = f"SET search_path TO \"{schema}\",public"
+    cursor.execute(set_cmd)
+    click.echo(f"execute: {set_cmd}")
 
 
 def normalize_dbtype(dbtype):
@@ -451,8 +462,7 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
     """
     生成数据库文档
     """
-    if is_file_in_use(output):
-        raise click.ClickException(f"文件: {output} 已被占用, 请关闭文件后再试")
+    ensure_file(output)
 
     if not host and not port and not jdbc and not database:
         use_jdbc = survey.routines.inquire("使用jdbc链接提供数据库信息? ", default=True)
@@ -503,6 +513,11 @@ def db_doc(ctx, jdbc, output, dbtype, host, port, user, password, schema, databa
 
     if open:
         os.startfile(output)
+
+
+def ensure_file(output):
+    if is_file_in_use(output):
+        raise click.ClickException(f"文件: {output} 已被占用, 请关闭文件后再试")
 
 
 def get_all_tables(cursor):
