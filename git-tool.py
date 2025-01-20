@@ -1,9 +1,17 @@
+import os
+from email.policy import default
 
 import click
+import gitlab
+import prompt_toolkit
 from click import option, argument
 
 from git import Repo, InvalidGitRepositoryError
 import survey
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import WordCompleter
+import json
 
 
 def all_branches(repo):
@@ -290,6 +298,86 @@ def create_standard_branches(ctx, source,  push):
         click.echo(f"新的分支{target}创建成功, 源分支为{source}")
 
 
+def load_config():
+    """加载配置文件"""
+    config_path = os.path.expanduser('~/.git-tool.json')
+    if os.path.exists(config_path):
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_config(config):
+    """保存配置文件"""
+    config_path = os.path.expanduser('~/.git-tool.json')
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+
+@cli.command(name="clone")
+@option('--url', '-u', help='gitlab url')
+@option('--token', '-t', help='gitlab token')
+@option('--namespace', '-n', help='gitlab namespace')
+@option('--dir', '-d', help='destination directory')
+@option('--ssh', is_flag=True, help='use ssh protocol', default=True)
+@click.pass_context
+def clone(ctx, url, token, namespace, dir, ssh):
+    """
+    从gitlab clone 仓库
+    """
+    # 加载配置
+    config = load_config()
+    
+    if not url:
+        url = os.getenv('GITLAB_URL') or config.get('gitlab_url') or survey.routines.input("请输入gitlab url: ")
+    
+    if not token:
+        token = os.getenv('GITLAB_TOKEN') or config.get('gitlab_token') or survey.routines.input("请输入gitlab token: ")
+    
+    if not dir:
+        dir = os.getenv('GITLAB_DIR') or config.get('gitlab_dir') or survey.routines.input("请输入目标目录: ")
+
+    # 保存新的配置
+    if url != config.get('gitlab_url') or token != config.get('gitlab_token'):
+        config['gitlab_url'] = url
+        config['gitlab_token'] = token
+        config['gitlab_dir'] = dir
+        save_config(config)
+
+    gl = gitlab.Gitlab(url=url, private_token=token, keep_base_url=True)
+    
+    # 搜索项目
+    search_term = survey.routines.input("请输入要搜索的仓库名称: ")
+    projects = gl.search('projects', search_term)
+    
+    if not projects:
+        click.echo("未找到匹配的仓库")
+        return
+        
+    # 格式化项目列表供选择
+    project_options = []
+    for p in projects:
+        project = gl.projects.get(p['id'])  # 获取完整的项目信息
+        project_options.append(f"{project.path_with_namespace} ({project.description or '无描述'})")
+    
+    selected_index = survey.routines.select("请选择要克隆的仓库: ", options=project_options)
+    selected_project = gl.projects.get(projects[selected_index]['id'])
+    
+    # 确定克隆目录
+    if not dir:
+        dir = os.getcwd()
+    
+    clone_path = os.path.join(dir, selected_project.path)
+    confirm = survey.routines.inquire(f"是否克隆到目录 {clone_path}?", default=True)
+    if not confirm:
+        clone_path = survey.routines.input("请输入目标目录: ")
+
+    
+    
+    # 执行克隆
+    clone_url = selected_project.ssh_url_to_repo if ssh else selected_project.http_url_to_repo
+    click.echo(f"正在克隆仓库 {selected_project.path_with_namespace} 到 {clone_path}")
+    click.echo(f"使用{('SSH' if ssh else 'HTTP')}协议: {clone_url}")
+    Repo.clone_from(clone_url, clone_path)
+    click.echo(f"仓库克隆完成")
 
 
 if __name__ == '__main__':
